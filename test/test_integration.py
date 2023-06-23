@@ -1,4 +1,5 @@
 """Runs tests from ./vspec in vim-vspec."""
+
 import os
 import subprocess
 try:
@@ -11,10 +12,10 @@ import pytest
 
 vspec_version = '1.9.0'
 
-VSPEC_URL = 'https://github.com/kana/vim-vspec/archive/%s.zip' % vspec_version
+VSPEC_URL = f'https://github.com/kana/vim-vspec/archive/{vspec_version}.zip'
 root = os.path.dirname(os.path.dirname(__file__))
 CACHE_FOLDER = os.path.join(root, 'build')
-VSPEC_FOLDER = os.path.join(CACHE_FOLDER, 'vim-vspec-%s' % vspec_version)
+VSPEC_FOLDER = os.path.join(CACHE_FOLDER, f'vim-vspec-{vspec_version}')
 VSPEC_RUNNER = os.path.join(VSPEC_FOLDER, 'bin/vspec')
 TEST_DIR = os.path.join(root, 'test', 'vspec')
 

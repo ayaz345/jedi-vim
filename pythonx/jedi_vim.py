@@ -4,6 +4,7 @@ The Python parts of the Jedi library for VIM. It is mostly about communicating
 with VIM.
 """
 
+
 from typing import Optional
 import traceback  # for exception output
 import re
@@ -21,12 +22,8 @@ import vim
 
 is_py3 = sys.version_info[0] >= 3
 if is_py3:
-    ELLIPSIS = "…"
     unicode = str
-else:
-    ELLIPSIS = u"…"
-
-
+ELLIPSIS = "…"
 try:
     # Somehow sys.prefix is set in combination with VIM and virtualenvs.
     # However the sys path is not affected. Just reset it to the normal value.
@@ -54,10 +51,7 @@ class PythonToVimStr(unicode):
         # support is pretty bad. don't ask how I came up with this... It just
         # works...
         # It seems to be related to that bug: http://bugs.python.org/issue5876
-        if unicode is str:
-            s = self
-        else:
-            s = self.encode('UTF-8')
+        s = self if unicode is str else self.encode('UTF-8')
         return '"%s"' % s.replace('\\', '\\\\').replace('"', r'\"')
 
 
@@ -348,10 +342,7 @@ def completions():
         source = ''
         for i, line in enumerate(vim.current.buffer):
             # enter this path again, otherwise source would be incomplete
-            if i == row - 1:
-                source += line[:column] + base + line[column:]
-            else:
-                source += line
+            source += line[:column] + base + line[column:] if i == row - 1 else line
             source += '\n'
         # here again hacks, because jedi has a different interface than vim
         column += len(base)
@@ -389,7 +380,7 @@ def completions():
             signatures = []
 
         show_call_signatures(signatures)
-        vim.command('return ' + strout)
+        vim.command(f'return {strout}')
 
 
 @contextmanager
@@ -438,10 +429,7 @@ def _goto_specific_name(n, options=''):
             echo_highlight("Cannot get the definition of Python keywords.")
         else:
             name = 'Namespaces' if n.type == 'namespace' else 'Builtin modules'
-            echo_highlight(
-                "%s cannot be displayed (%s)."
-                % (name, n.full_name or n.name)
-            )
+            echo_highlight(f"{name} cannot be displayed ({n.full_name or n.name}).")
     else:
         using_tagstack = int(vim_eval('g:jedi#use_tag_stack')) == 1
         result = set_buffer(n.module_path, options=options,
@@ -452,30 +440,25 @@ def _goto_specific_name(n, options=''):
                 n.module_path.exists()):
             tagname = n.name
             with tempfile('{0}\t{1}\t{2}'.format(
-                    tagname, n.module_path, 'call cursor({0}, {1})'.format(
-                        n.line, n.column + 1))) as f:
+                                tagname, n.module_path, 'call cursor({0}, {1})'.format(
+                                    n.line, n.column + 1))) as f:
                 old_tags = vim.eval('&tags')
                 old_wildignore = vim.eval('&wildignore')
                 try:
                     # Clear wildignore to ensure tag file isn't ignored
                     vim.command('set wildignore=')
-                    vim.command('let &tags = %s' %
-                                repr(PythonToVimStr(f.name)))
-                    vim.command('tjump %s' % tagname)
+                    vim.command(f'let &tags = {repr(PythonToVimStr(f.name))}')
+                    vim.command(f'tjump {tagname}')
                 finally:
-                    vim.command('let &tags = %s' %
-                                repr(PythonToVimStr(old_tags)))
-                    vim.command('let &wildignore = %s' %
-                                repr(PythonToVimStr(old_wildignore)))
+                    vim.command(f'let &tags = {repr(PythonToVimStr(old_tags))}')
+                    vim.command(f'let &wildignore = {repr(PythonToVimStr(old_wildignore))}')
         vim.current.window.cursor = n.line, n.column
 
 
 def relpath(path):
     """Make path relative to cwd if it is below."""
     abspath = os.path.abspath(path)
-    if abspath.startswith(os.getcwd()):
-        return os.path.relpath(path)
-    return path
+    return os.path.relpath(path) if abspath.startswith(os.getcwd()) else path
 
 
 def annotate_description(n):
@@ -488,7 +471,7 @@ def annotate_description(n):
         typ = 'def'
     else:
         typ = n.type
-    return '[%s] %s' % (typ, code)
+    return f'[{typ}] {code}'
 
 
 def show_goto_multi_results(names, mode):
@@ -522,9 +505,9 @@ def show_goto_multi_results(names, mode):
     qf_title = mode
     if current_def is not None:
         if current_def.full_name:
-            qf_title += ": " + current_def.full_name
+            qf_title += f": {current_def.full_name}"
         else:
-            qf_title += ": " + str(current_def)
+            qf_title += f": {str(current_def)}"
         select_entry = current_idx
     else:
         select_entry = 0
@@ -723,9 +706,9 @@ def _add_highlighted_name(buf, name):
 
     assert IS_NVIM
     end_col = name.column + length
-    src_id = buf.add_highlight('jediUsage', lnum-1, start_col, end_col,
-                               src_id=0)
-    return src_id
+    return buf.add_highlight(
+        'jediUsage', lnum - 1, start_col, end_col, src_id=0
+    )
 
 
 def highlight_usages_for_vim_win():
@@ -757,7 +740,7 @@ def highlight_usages_for_vim_win():
                      name.column + 1,
                      len(name.name)]
                 ]
-                expr = "matchaddpos('jediUsage', %s)" % repr(positions)
+                expr = f"matchaddpos('jediUsage', {repr(positions)})"
                 matchids.append(int(vim_eval(expr)))
 
     if matchids:
@@ -791,15 +774,14 @@ def show_documentation():
 
     docs = []
     for n in names:
-        doc = n.docstring()
-        if doc:
-            title = 'Docstring for %s %s' % (n.type, n.full_name or n.name)
+        if doc := n.docstring():
+            title = f'Docstring for {n.type} {n.full_name or n.name}'
             underline = '=' * len(title)
             docs.append('%s\n%s\n%s' % (title, underline, doc))
         else:
-            docs.append('|No Docstring for %s|' % n)
+            docs.append(f'|No Docstring for {n}|')
         text = ('\n' + '-' * 79 + '\n').join(docs)
-        vim.command('let l:doc = %s' % repr(PythonToVimStr(text)))
+        vim.command(f'let l:doc = {repr(PythonToVimStr(text))}')
         vim.command('let l:doc_lines = %s' % len(text.split('\n')))
     return True
 
@@ -824,8 +806,8 @@ def clear_call_signatures():
             # Some signs were added to minimize syntax changes due to call
             # signatures. We have to remove them again. The number of them is
             # specified in `match.group(1)`.
-            after = line[match.end() + int(match.group(1)):]
-            line = line[:match.start()] + match.group(2) + after
+            after = line[match.end() + int(match[1]):]
+            line = line[:match.start()] + match[2] + after
             vim.current.buffer[i] = line
     vim.current.window.cursor = cursor
 
@@ -861,14 +843,14 @@ def show_call_signatures(signatures=()):
             break
 
         # TODO check if completion menu is above or below
-        line = vim_eval("getline(%s)" % line_to_replace)
+        line = vim_eval(f"getline({line_to_replace})")
 
         # Descriptions are usually looking like `param name`, remove the param.
         params = [p.description.replace('\n', '').replace('param ', '', 1)
                   for p in signature.params]
         try:
             # *_*PLACEHOLDER*_* makes something fat. See after/syntax file.
-            params[signature.index] = '*_*%s*_*' % params[signature.index]
+            params[signature.index] = f'*_*{params[signature.index]}*_*'
         except (IndexError, TypeError):
             pass
 
@@ -882,7 +864,7 @@ def show_call_signatures(signatures=()):
         # There is no possibility in VIM to draw on the screen, but there
         # will be one (see :help todo Patch to access screen under Python.
         # (Marko Mahni, 2010 Jul 18))
-        text = " (%s) " % ', '.join(params)
+        text = f" ({', '.join(params)}) "
         text = ' ' * (insert_column - len(line)) + text
         end_column = insert_column + len(text) - 2  # -2 due to bold symbols
 
@@ -904,13 +886,13 @@ def show_call_signatures(signatures=()):
         add = ' '.join(re.findall(regex_quotes, replace))
         # search backwards
         if add and replace[0] in ['"', "'"]:
-            a = re.search(regex_quotes + '$', prefix)
-            add = ('' if a is None else a.group(0)) + add
+            a = re.search(f'{regex_quotes}$', prefix)
+            add = ('' if a is None else a[0]) + add
 
-        tup = '%s, %s' % (len(add), replace)
+        tup = f'{len(add)}, {replace}'
         repl = prefix + (regex % (tup, text)) + add + line[end_column:]
 
-        vim_eval('setline(%s, %s)' % (line_to_replace, repr(PythonToVimStr(repl))))
+        vim_eval(f'setline({line_to_replace}, {repr(PythonToVimStr(repl))})')
 
 
 @catch_and_print_exceptions
@@ -979,16 +961,24 @@ def cmdline_call_signatures(signatures):
                  max_num_spaces) * ' '
 
     if index is not None:
-        vim_command('                      echon "%s" | '
-                    'echohl Function     | echon "%s" | '
-                    'echohl None         | echon "("  | '
-                    'echohl jediFunction | echon "%s" | '
-                    'echohl jediFat      | echon "%s" | '
-                    'echohl jediFunction | echon "%s" | '
-                    'echohl None         | echon ")"'
-                    % (spaces, signatures[0].name,
-                       left + ', ' if left else '',
-                       center, ', ' + right if right else ''))
+        vim_command(
+            (
+                '                      echon "%s" | '
+                'echohl Function     | echon "%s" | '
+                'echohl None         | echon "("  | '
+                'echohl jediFunction | echon "%s" | '
+                'echohl jediFat      | echon "%s" | '
+                'echohl jediFunction | echon "%s" | '
+                'echohl None         | echon ")"'
+                % (
+                    spaces,
+                    signatures[0].name,
+                    f'{left}, ' if left else '',
+                    center,
+                    f', {right}' if right else '',
+                )
+            )
+        )
     else:
         vim_command('                      echon "%s" | '
                     'echohl Function     | echon "%s" | '
@@ -1004,8 +994,9 @@ def rename(delete_word=True):
         cursor = vim.current.window.cursor
         changenr = vim.eval('changenr()')  # track undo tree
         vim_command('augroup jedi_rename')
-        vim_command('autocmd InsertLeave <buffer> call jedi#rename'
-                    '({}, {}, {})'.format(cursor[0], cursor[1], changenr))
+        vim_command(
+            f'autocmd InsertLeave <buffer> call jedi#rename({cursor[0]}, {cursor[1]}, {changenr})'
+        )
         vim_command('augroup END')
 
         vim_command("let s:jedi_replace_orig = expand('<cword>')")
@@ -1039,7 +1030,7 @@ def rename(delete_word=True):
         else:
             replace = None
 
-        vim_command('undo {}'.format(changenr))
+        vim_command(f'undo {changenr}')
 
         vim.current.window.cursor = cursor
 
@@ -1051,13 +1042,8 @@ def rename_visual(use_selected_text_as_prompt_answer=False):
     orig = vim.eval('getline(".")[(getpos("\'<")[2]-1):getpos("\'>")[2]'
                     '-((&selection ==# "exclusive") ? 2 : 1)]')
 
-    input_text = ""
-    if use_selected_text_as_prompt_answer:
-        input_text = orig
-
-    replace = vim.eval(
-        'input("Rename to:", "{}")'.format(PythonToVimStr(input_text))
-    )
+    input_text = orig if use_selected_text_as_prompt_answer else ""
+    replace = vim.eval(f'input("Rename to:", "{PythonToVimStr(input_text)}")')
     do_rename(replace, orig)
 
 
@@ -1089,7 +1075,7 @@ def do_rename(replace, orig=None):
 
         result = set_buffer(r.module_path)
         if not result:
-            echo_highlight('Failed to create buffer window for %s!' % (r.module_path))
+            echo_highlight(f'Failed to create buffer window for {r.module_path}!')
             continue
 
         buffers.add(vim.current.buffer.name)
@@ -1117,7 +1103,7 @@ def py_import():
     import_path = args.pop()
     name = next(get_project().search(import_path), None)
     if name is None:
-        echo_highlight('Cannot find %s in your project or on sys.path!' % import_path)
+        echo_highlight(f'Cannot find {import_path} in your project or on sys.path!')
     else:
         cmd_args = ' '.join([a.replace(' ', '\\ ') for a in args])
         _goto_specific_name(name, options=cmd_args)
@@ -1131,7 +1117,7 @@ def py_import_completions():
         comps = []
     else:
         names = get_project().complete_search(argl)
-        comps = [argl + n for n in sorted(set(c.complete for c in names))]
+        comps = [argl + n for n in sorted({c.complete for c in names})]
     vim.command("return '%s'" % '\n'.join(comps))
 
 
@@ -1150,7 +1136,7 @@ def set_buffer(path: Optional[Path], options='', using_tagstack=False):
     # options are what you can to edit the edit options
     if int(vim_eval('g:jedi#use_tabs_not_buffers')) == 1:
         _tabnew(path, options)
-    elif not vim_eval('g:jedi#use_splits_not_buffers') in [1, '1']:
+    elif vim_eval('g:jedi#use_splits_not_buffers') not in [1, '1']:
         user_split_option = vim_eval('g:jedi#use_splits_not_buffers')
         split_options = {
             'top': 'topleft split',
@@ -1168,7 +1154,7 @@ def set_buffer(path: Optional[Path], options='', using_tagstack=False):
                   'Valid options are: {1}.'.format(
                       user_split_option, ', '.join(split_options.keys())))
         else:
-            vim_command(split_options[user_split_option] + " %s" % escape_file_path(path))
+            vim_command(f"{split_options[user_split_option]} {escape_file_path(path)}")
     else:
         if int(vim_eval("!&hidden && &modified")) == 1:
             if not vim_eval("bufname('%')"):
@@ -1178,7 +1164,7 @@ def set_buffer(path: Optional[Path], options='', using_tagstack=False):
                 vim_command('w')
         if using_tagstack:
             return True
-        vim_command('edit %s %s' % (options, escape_file_path(path)))
+        vim_command(f'edit {options} {escape_file_path(path)}')
     # sometimes syntax is being disabled and the filetype not set.
     if int(vim_eval('!exists("g:syntax_on")')) == 1:
         vim_command('syntax enable')
@@ -1195,7 +1181,7 @@ def _tabnew(path, options=''):
     :param options: `:tabnew` options, read vim help.
     """
     if int(vim_eval('has("gui")')) == 1:
-        vim_command('tab drop %s %s' % (options, escape_file_path(path)))
+        vim_command(f'tab drop {options} {escape_file_path(path)}')
         return
 
     for tab_nr in range(int(vim_eval("tabpagenr('$')"))):
@@ -1219,7 +1205,7 @@ def _tabnew(path, options=''):
         break
     else:
         # tab doesn't exist, add a new one.
-        vim_command('tabnew %s' % escape_file_path(path))
+        vim_command(f'tabnew {escape_file_path(path)}')
 
 
 def escape_file_path(path):
